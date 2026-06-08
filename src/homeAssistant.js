@@ -1,105 +1,63 @@
-const HA_TOKEN = import.meta.env.VITE_HA_TOKEN;
+const HA_TOKEN = import.meta.env.VITE_HA_TOKEN
 
 const headers = {
-  Authorization: `Bearer ${HA_TOKEN}`,
-  "Content-Type": "application/json",
-};
+  'Authorization': `Bearer ${HA_TOKEN}`,
+  'Content-Type': 'application/json',
+}
 
-async function haGet(path) {
-  const res = await fetch(`/api${path}`, {
+const ENTITY_HAPPINESS = 'input_number.razina_srece'
+const ENTITY_NAME      = 'input_text.ime_medvjedica'
+
+export async function getState(entityId) {
+  const res = await fetch(`/api/states/${entityId}`, { headers })
+  if (!res.ok) return null
+  return res.json()
+}
+
+export async function setState(entityId, state, attributes = {}) {
+  const res = await fetch(`/api/states/${entityId}`, {
+    method: 'POST',
     headers,
-  });
-
-  if (!res.ok) {
-    throw new Error(`HA ${res.status}: ${res.statusText}`);
-  }
-
-  return res.json();
+    body: JSON.stringify({ state, attributes }),
+  })
+  return res.ok
 }
 
-async function haPost(path, body) {
-  const res = await fetch(`/api${path}`, {
-    method: "POST",
+export async function callService(domain, service, data) {
+  const res = await fetch(`/api/services/${domain}/${service}`, {
+    method: 'POST',
     headers,
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    throw new Error(`HA ${res.status}: ${res.statusText}`);
-  }
-
-  return res.json();
+    body: JSON.stringify(data),
+  })
+  return res.ok
 }
 
-function getNameEntity(id) {
-  switch (id) {
-    case 2:
-      return "input_text.toyname";
-    default:
-      throw new Error(`Unsupported plushie ID: ${id}`);
-  }
+export async function getPlushieHappiness() {
+  const s = await getState(ENTITY_HAPPINESS)
+  return s ? Math.round(parseFloat(s.state)) : null
 }
 
-export async function getPlushie(id) {
-  if (id !== 2) return null;
-
-  try {
-    const [happinessState, nameState] = await Promise.all([
-      haGet("/states/counter.razina_srece"),
-      haGet("/states/input_text.toyname"),
-    ]);
-
-    return {
-      id,
-      name: nameState.state?.trim() || `Ljubimac ${id}`,
-      happiness: Number(happinessState.state) || 0,
-    };
-  } catch (error) {
-    console.error("Failed to fetch plushie:", error);
-    return null;
-  }
+export async function setPlushieHappiness(value) {
+  return callService('input_number', 'set_value', {
+    entity_id: ENTITY_HAPPINESS,
+    value,
+  })
 }
 
-export async function createPlushie(id, name) {
-  const existing = await getPlushie(id);
-
-  if (!existing) {
-    throw new Error(
-      `Ljubimac s ID-om ${id} ne postoji u Home Assistantu.`
-    );
-  }
-
-  await haPost("/services/input_text/set_value", {
-    entity_id: getNameEntity(id),
-    value: name.trim(),
-  });
-
-  return refreshPlushie(id);
+export async function getPlushieName() {
+  const s = await getState(ENTITY_NAME)
+  return s ? s.state : null
 }
 
-export async function renamePlushie(id, newName) {
-  if (!newName?.trim()) {
-    throw new Error("Ime ne smije biti prazno.");
-  }
-
-  await haPost("/services/input_text/set_value", {
-    entity_id: getNameEntity(id),
-    value: newName.trim(),
-  });
-
-  return refreshPlushie(id);
+export async function setPlushieName(name) {
+  return callService('input_text', 'set_value', {
+    entity_id: ENTITY_NAME,
+    value: name,
+  })
 }
 
-export async function refreshPlushie(id) {
-  return getPlushie(id);
-}
-
-export async function checkConnection() {
-  try {
-    await haGet("/config");
-    return true;
-  } catch (error) {
-    console.error("Home Assistant connection failed:", error);
-    return false;
-  }
+export async function createPlushie(name) {
+  await setState(ENTITY_NAME, name)
+  await setState(ENTITY_HAPPINESS, '3')
+  return true
 }
